@@ -51,6 +51,9 @@ Generation options include:
 - Generate Assert Method
 - Include default Send Keys text
 
+## Screenshots
+<img width="1910" height="955" alt="Side panel" src="https://github.com/user-attachments/assets/fba3c4f4-6821-4e6e-abc8-709e5f615bbf" />
+
 
 ## Installation
 

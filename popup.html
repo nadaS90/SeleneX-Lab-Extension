@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeleneX Lab - Smart Locator & Selenium Code Generator</title>
+  <style>
+    /* ============================================================
+       RESET & ROOT VARIABLES
+    ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deepest:   #050c1a;
+      --bg-deep:      #08101e;
+      --bg-card:      #0c1726;
+      --bg-card-hd:   #09131f;
+      --bg-input:     #07111e;
+      --border:       #152237;
+      --border-hover: #1e3554;
+      --border-active:#f26700;
+      --text-primary: #d8e4f5;
+      --text-muted:   #4d6a8a;
+      --text-dim:     #263d59;
+      --green:        #f26700;
+      --green-dark:   #c85500;
+      --green-darker: #7a3000;
+      --red:          #ef4444;
+      --red-dark:     #b91c1c;
+      --radius-card:  9px;
+      --radius-btn:   7px;
+      --radius-badge: 4px;
+    }
+
+    body {
+      width: 340px;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    /* ============================================================
+       SCROLLBAR
+    ============================================================ */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ============================================================
+       HEADER
+    ============================================================ */
+    .header {
+      background: linear-gradient(135deg, #120b05 0%, #1d1208 60%, #100a05 100%);
+      padding: 11px 14px 10px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, rgba(242,103,0,0.7) 45%, transparent 100%);
+    }
+
+    .header-icon {
+      width: 28px; height: 28px;
+      background: transparent url("icons/icon32.png") center / contain no-repeat;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .header-text { flex: 1; }
+    .header-title {
+      font-size: 14.5px; font-weight: 800;
+      color: #fff; letter-spacing: 0.01em; line-height: 1.2;
+    }
+    .header-sub {
+      font-size: 10px; color: var(--text-muted);
+      letter-spacing: 0.04em; margin-top: 1px;
+    }
+
+    .header-badge {
+      font-size: 9.5px; color: #ff9b3d; font-weight: 700;
+      letter-spacing: 0.06em;
+      background: rgba(122,48,0,0.35);
+      border: 1px solid rgba(242,103,0,0.35);
+      padding: 3px 8px; border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    /* ============================================================
+       CONTENT
+    ============================================================ */
+    .content {
+      padding: 10px 11px 8px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    /* ============================================================
+       BUTTONS
+    ============================================================ */
+    button {
+      cursor: pointer; border: none; outline: none;
+      font-family: inherit; transition: all 0.15s ease;
+    }
+    .btn {
+      display: inline-flex; align-items: center;
+      justify-content: center; gap: 5px;
+      padding: 8px 12px; border-radius: var(--radius-btn);
+      font-size: 12.5px; font-weight: 700;
+      width: 100%; letter-spacing: 0.01em;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--green-darker), var(--green-dark) 55%, var(--green));
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(242,103,0,0.28);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: linear-gradient(135deg, #9a3d00, var(--green-dark) 55%, #ff7a14);
+      box-shadow: 0 3px 16px rgba(242,103,0,0.42);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #7f1d1d, var(--red-dark) 55%, var(--red));
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(185,28,28,0.24);
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: linear-gradient(135deg, #991b1b, #dc2626 55%, var(--red));
+      box-shadow: 0 3px 16px rgba(185,28,28,0.38);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--bg-card-hd);
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+    }
+
+    .btn-sm { padding: 5px 10px; font-size: 11px; width: auto; border-radius: 6px; }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+    /* ============================================================
+       CARDS
+    ============================================================ */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 6px 11px;
+      background: var(--bg-card-hd);
+      border-bottom: 1px solid var(--border);
+      font-size: 9.5px; font-weight: 800;
+      color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 0.12em;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-body { padding: 9px 10px; }
+
+    /* ============================================================
+       FORM CONTROLS
+    ============================================================ */
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-label {
+      font-size: 10px; font-weight: 800;
+      color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.09em;
+    }
+
+    select {
+      background: var(--bg-input); color: var(--text-primary);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; font-size: 13px;
+      font-family: inherit; width: 100%;
+      cursor: pointer; outline: none; appearance: auto;
+    }
+    select:focus { border-color: var(--green); }
+
+    input[type="text"] {
+      background: var(--bg-input); color: var(--text-primary);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; font-size: 13px;
+      font-family: inherit; width: 100%; outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--green); }
+    input[type="text"]::placeholder { color: var(--text-dim); }
+
+    /* ============================================================
+       CHECKBOXES
+    ============================================================ */
+    .checkbox-group { display: flex; flex-direction: column; gap: 5px; }
+    .checkbox-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 9px;
+      background: var(--bg-input);
+      border: 1px solid var(--border); border-radius: 7px;
+      cursor: pointer; user-select: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .checkbox-item:hover { border-color: var(--border-hover); }
+    .checkbox-item.checked { border-color: #9a3d00; background: #160b02; }
+    .checkbox-item input[type="checkbox"] {
+      width: 14px; height: 14px;
+      accent-color: var(--green);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .checkbox-item label { cursor: pointer; font-size: 12px; color: var(--text-muted); line-height: 1.3; }
+    .checkbox-item.checked label { color: #ffb36b; }
+
+    /* ============================================================
+       CODE AREA
+    ============================================================ */
+    .code-area {
+      background: var(--bg-deepest);
+      border: 1px solid #0d1b2e;
+      border-radius: 6px;
+      padding: 10px 11px;
+      font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+      font-size: 11.5px;
+      color: #ffb36b;
+      white-space: pre; overflow: auto;
+      max-height: 200px; min-height: 50px;
+      line-height: 1.65; word-break: normal;
+    }
+    .code-area::-webkit-scrollbar { width: 4px; height: 4px; }
+    .code-area::-webkit-scrollbar-thumb { background: #172438; border-radius: 4px; }
+    .code-placeholder { color: #1e2d47; font-style: italic; }
+
+    /* ============================================================
+       LOCATOR LIST — SMART DESIGN
+    ============================================================ */
+    .locator-list { display: flex; flex-direction: column; gap: 5px; }
+    .locator-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 10px 0 4px; font-style: italic; }
+
+    .locator-item {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 7px 9px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .locator-item:hover  { border-color: var(--border-hover); background: #0a1625; }
+    .locator-item.active { border-color: var(--green); background: #160b02; }
+
+    /* Best Match ribbon */
+    .locator-item.best-match::before {
+      content: '⭐ Best';
+      position: absolute; top: -1px; right: -1px;
+      background: linear-gradient(135deg, var(--green-darker), var(--green-dark), var(--green));
+      color: #fff3e8; font-size: 9px; font-weight: 800;
+      padding: 2px 7px; border-radius: 0 7px 0 6px;
+      letter-spacing: 0.04em;
+    }
+
+    /* Top row: type badge + stars */
+    .locator-item-top {
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .locator-type-badge {
+      font-size: 9px; font-weight: 900;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 2px 6px; border-radius: var(--radius-badge);
+      background: #0e192c; border: 1px solid #1c2e48;
+      color: #3d6b9e;
+      flex-shrink: 0; min-width: 36px; text-align: center;
+    }
+    .locator-item.active .locator-type-badge {
+      background: #160b02; border-color: #9a3d00; color: var(--green);
+    }
+
+    .locator-stars { font-size: 11px; white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+
+    /* Quality badge chip */
+    .quality-badge {
+      font-size: 9px; font-weight: 700;
+      padding: 1px 6px; border-radius: 3px;
+      letter-spacing: 0.04em; white-space: nowrap;
+      border: 1px solid; flex-shrink: 0;
+    }
+    .qb-test-ready  { background: #2b1300; color: #ffb36b; border-color: #9a3d00; }
+    .qb-excellent   { background: #2b1300; color: #f26700; border-color: #7a3000; }
+    .qb-unique      { background: #0a1f3d; color: #60a5fa; border-color: #1e40af; }
+    .qb-good        { background: #042f2e; color: #2dd4bf; border-color: #0f766e; }
+    .qb-stable      { background: #042f2e; color: #5eead4; border-color: #115e59; }
+    .qb-acceptable  { background: #1a2a3a; color: #7d95b5; border-color: var(--border); }
+    .qb-multiple    { background: #271900; color: #fb923c; border-color: #9a3412; }
+    .qb-weak        { background: #200a0a; color: #f87171; border-color: #7f1d1d; }
+    .qb-volatile    { background: #200a0a; color: #ef4444; border-color: #991b1b; }
+    .qb-invalid     { background: #200a0a; color: #f87171; border-color: #7f1d1d; }
+    .qb-checking    { background: #1a2030; color: #4d6a8a; border-color: var(--border); }
+
+    /* Value preview */
+    .locator-value {
+      font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+      font-size: 11px; color: #3d5a82;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .locator-item.active .locator-value { color: #ffb36b; }
+    .locator-item:hover .locator-value  { color: #5a789e; }
+
+    /* Uniqueness count label */
+    .locator-count {
+      font-size: 9.5px; color: var(--text-muted);
+      margin-left: auto; white-space: nowrap;
+    }
+
+    /* ============================================================
+       HISTORY
+    ============================================================ */
+    .history-list {
+      display: flex; flex-direction: column; gap: 4px;
+      max-height: 110px; overflow-y: auto;
+    }
+    .history-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 10px 0 4px; font-style: italic; }
+    .history-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 8px; border-radius: 6px;
+      border: 1px solid #0e192c;
+      background: var(--bg-deepest);
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .history-item:hover { border-color: var(--border-hover); background: #0a1625; }
+    .history-tag { font-size: 10px; font-weight: 700; color: #243d5e; font-family: 'Consolas', monospace; min-width: 28px; }
+    .history-label { flex: 1; font-size: 11.5px; color: #3d5a82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-frame-tag {
+      font-size: 9px; color: #1e4d7a;
+      background: #09131f; border: 1px solid #0f2035;
+      padding: 1px 5px; border-radius: 3px;
+    }
+    .history-footer { display: flex; justify-content: flex-end; padding: 6px 10px; border-top: 1px solid #0e192c; }
+
+    /* ============================================================
+       FOOTER / ATTRIBUTION
+    ============================================================ */
+    .footer {
+      background: var(--bg-card-hd);
+      border-top: 1px solid var(--border);
+      padding: 8px 13px 9px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .footer-dot {
+      width: 5px; height: 5px;
+      background: var(--green-dark);
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 5px rgba(242,103,0,0.4);
+    }
+
+    .footer-text {
+      flex: 1;
+      font-size: 10.5px;
+      color: var(--text-dim);
+      letter-spacing: 0.01em;
+    }
+    .footer-text strong {
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .github-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      background: #0e192c;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .github-btn:hover {
+      background: #162036;
+      border-color: var(--border-hover);
+      box-shadow: 0 0 8px rgba(242,103,0,0.18);
+    }
+    .github-btn svg {
+      width: 14px; height: 14px;
+      fill: var(--text-muted);
+      transition: fill 0.15s;
+    }
+    .github-btn:hover svg { fill: var(--text-primary); }
+
+    /* ============================================================
+       SVG WARNING BANNER
+    ============================================================ */
+    .svg-warning {
+      background: #1c0e00; border: 1px solid #7c3b0a;
+      border-radius: 6px; padding: 7px 10px;
+      font-size: 11px; color: #fb923c;
+      display: none; align-items: flex-start; gap: 6px;
+    }
+    .svg-warning.show { display: flex; }
+    .svg-warning-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ============================================================
+       TOAST
+    ============================================================ */
+    .toast {
+      position: fixed; bottom: 14px; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: linear-gradient(135deg, var(--green-darker), var(--green-dark), var(--green));
+      color: #fff; padding: 7px 20px; border-radius: 20px;
+      font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em;
+      opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 99999; pointer-events: none;
+      box-shadow: 0 4px 18px rgba(22,163,74,0.45);
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ============================================================
+       ERROR MODAL
+    ============================================================ */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(4,9,20,0.88);
+      backdrop-filter: blur(3px);
+      z-index: 99998;
+      display: none; align-items: center; justify-content: center;
+      padding: 18px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid #1c2e48;
+      border-radius: 12px;
+      padding: 18px 16px 16px;
+      width: 100%; max-width: 296px;
+      box-shadow: 0 10px 48px rgba(0,0,0,0.75);
+    }
+    .modal-icon { font-size: 22px; margin-bottom: 8px; }
+    .modal-title { font-size: 14.5px; font-weight: 800; color: #fff; margin-bottom: 5px; }
+    .modal-subtitle { font-size: 11px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.7; direction: rtl; text-align: right; }
+    .modal-error-box {
+      background: var(--bg-deepest); border: 1px solid #1c2030;
+      border-radius: 6px; padding: 9px; font-size: 11px;
+      font-family: 'Consolas', monospace; color: #f87171;
+      margin-bottom: 12px; max-height: 90px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+    }
+    .modal-error-box::-webkit-scrollbar-thumb { background: #1c2e48; }
+    .modal-buttons { display: flex; gap: 7px; }
+    .modal-buttons .btn { font-size: 12px; padding: 7px 12px; }
+
+    /* ============================================================
+       UTILITY
+    ============================================================ */
+    .hidden { display: none !important; }
+    .divider { height: 1px; background: var(--border); margin: 0 1px; }
+  </style>
+</head>
+<body>
+
+  <!-- ================================================
+       HEADER
+  ================================================ -->
+  <div class="header">
+    <div class="header-icon" aria-hidden="true"></div>
+    <div class="header-text">
+      <div class="header-title">SeleneX Lab</div>
+      <div class="header-sub">Smart Locator & Selenium Code Generator</div>
+    </div>
+    <span class="header-badge">v1.0</span>
+  </div>
+
+  <!-- ================================================
+       MAIN CONTENT
+  ================================================ -->
+  <div class="content">
+
+    <!-- Action Buttons -->
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnSelectElement" type="button">▶ Select Element</button>
+      <button class="btn btn-danger"  id="btnClear"         type="button">✖ Clear</button>
+    </div>
+
+    <!-- SVG Warning Banner -->
+    <div class="svg-warning" id="svgWarning">
+      <span class="svg-warning-icon">⚠</span>
+      <span id="svgWarningText">SVG element detected. The extension climbed to a smarter parent. Locators may be limited — verify manually.</span>
+    </div>
+
+    <!-- Action + Send Keys -->
+    <div class="form-group">
+      <label class="form-label" for="actionSelect">Action</label>
+      <select id="actionSelect">
+        <option value="click">Click</option>
+        <option value="sendKeys">Send Keys</option>
+        <option value="getText">Get Text</option>
+        <option value="assertVisible">Assert Visible</option>
+      </select>
+    </div>
+
+    <div class="form-group hidden" id="sendKeysGroup">
+      <label class="form-label" for="sendKeysInput">Text to Type</label>
+      <input type="text" id="sendKeysInput" placeholder="voucherCode or Constants.PassportUser" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="outputModeSelect">Output</label>
+      <select id="outputModeSelect">
+        <option value="fullMethod">Full Method</option>
+        <option value="locatorOnly">Locator Only</option>
+      </select>
+    </div>
+
+    <!-- Generation Options -->
+    <div class="checkbox-group">
+      <div class="checkbox-item" id="chkUseJsClickWrapper">
+        <input type="checkbox" id="chkUseJsClick" />
+        <label for="chkUseJsClick">Use JavaScript Click</label>
+      </div>
+      <div class="checkbox-item" id="chkGenerateAssertWrapper">
+        <input type="checkbox" id="chkGenerateAssert" />
+        <label for="chkGenerateAssert">Generate Assert Method</label>
+      </div>
+      <div class="checkbox-item" id="chkIncludeDefaultTextWrapper">
+        <input type="checkbox" id="chkIncludeDefaultText" />
+        <label for="chkIncludeDefaultText">Use Text as Data Source</label>
+      </div>
+    </div>
+
+    <!-- Generated Code Card -->
+    <div class="card">
+      <div class="card-header">Generated Code</div>
+      <div style="padding: 8px 9px 0;">
+        <div class="code-area" id="codeArea"><span class="code-placeholder">// Select an element to generate code…</span></div>
+      </div>
+      <div style="padding: 7px 9px 9px;">
+        <button class="btn btn-secondary" id="btnCopyCode" type="button">📋 Copy Code</button>
+      </div>
+    </div>
+
+    <!-- Available Locators Card -->
+    <div class="card">
+      <div class="card-header">
+        <span>Available Locators</span>
+        <span id="locatorCountLabel" style="font-weight:600; color: #22484c; letter-spacing:0;"></span>
+      </div>
+      <div class="card-body">
+        <div class="locator-list" id="locatorList">
+          <div class="locator-empty">No element selected</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History Card -->
+    <div class="card">
+      <div class="card-header">History</div>
+      <div class="card-body" style="padding: 8px 9px;">
+        <div class="history-list" id="historyList">
+          <div class="history-empty">No history yet</div>
+        </div>
+      </div>
+      <div class="history-footer">
+        <button class="btn btn-secondary btn-sm" id="btnClearHistory" type="button">🗑 Clear History</button>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+
+  <!-- ================================================
+       FOOTER — ATTRIBUTION
+  ================================================ -->
+  <div class="footer">
+    <div class="footer-dot"></div>
+    <span class="footer-text">Programmed by <strong>Nada Sayed</strong></span>
+    <button class="github-btn" id="githubBtn" type="button" title="GitHub: nadaS90 - https://github.com/nadaS90">
+      <!-- GitHub Mark SVG -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ================================================
+       TOAST
+  ================================================ -->
+  <div class="toast" id="toast">Copied ✓</div>
+
+  <!-- ================================================
+       ERROR MODAL
+  ================================================ -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-icon">💪</div>
+      <div class="modal-title">عاش يا تيستر</div>
+      <div class="modal-subtitle">حصل موقف بسيط، انسخ رسالة الخطأ وابعتها وأنا أظبطه</div>
+      <div class="modal-error-box" id="modalErrorText"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" id="btnCopyError" type="button">📋 Copy Error</button>
+        <button class="btn btn-primary"   id="btnModalOk"   type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

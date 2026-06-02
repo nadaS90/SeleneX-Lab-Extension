@@ -214,6 +214,8 @@
       transition: border-color 0.15s, background 0.15s;
     }
     .checkbox-item:hover { border-color: var(--border-hover); }
+    .checkbox-item.disabled { opacity: 0.55; cursor: not-allowed; }
+    .checkbox-item.disabled label { cursor: not-allowed; }
     .checkbox-item.checked { border-color: #9a3d00; background: #160b02; }
     .checkbox-item input[type="checkbox"] {
       width: 14px; height: 14px;
@@ -507,7 +509,9 @@
       <select id="actionSelect">
         <option value="click">Click</option>
         <option value="sendKeys">Send Keys</option>
+        <option value="sendTextWithClear">Send Text With Clear</option>
         <option value="getText">Get Text</option>
+        <option value="hover">Hover</option>
         <option value="assertVisible">Assert Visible</option>
       </select>
     </div>
@@ -520,8 +524,8 @@
     <div class="form-group">
       <label class="form-label" for="outputModeSelect">Output</label>
       <select id="outputModeSelect">
+        <option value="locatorOnly" selected>Locator Only</option>
         <option value="fullMethod">Full Method</option>
-        <option value="locatorOnly">Locator Only</option>
       </select>
     </div>
 
@@ -529,7 +533,7 @@
     <div class="checkbox-group">
       <div class="checkbox-item" id="chkUseJsClickWrapper">
         <input type="checkbox" id="chkUseJsClick" />
-        <label for="chkUseJsClick">Use JavaScript Click</label>
+        <label for="chkUseJsClick">Use JavaScript</label>
       </div>
       <div class="checkbox-item" id="chkGenerateAssertWrapper">
         <input type="checkbox" id="chkGenerateAssert" />
@@ -538,6 +542,10 @@
       <div class="checkbox-item" id="chkIncludeDefaultTextWrapper">
         <input type="checkbox" id="chkIncludeDefaultText" />
         <label for="chkIncludeDefaultText">Use Text as Data Source</label>
+      </div>
+      <div class="checkbox-item" id="chkIncludeWrappersWrapper">
+        <input type="checkbox" id="chkIncludeWrappers" />
+        <label for="chkIncludeWrappers">Include Wrapper Methods</label>
       </div>
     </div>
 

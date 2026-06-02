@@ -18,7 +18,16 @@
 (function initSeleneXLabContent() {
 
 if (window.__selenexLabContentV1) {
-  window.__selenexLabContentV1.destroy();
+  try {
+    window.__selenexLabContentV1.destroy();
+  } catch (_) {
+    // Previous extension context may be invalid after reload/update.
+  }
+  try {
+    delete window.__selenexLabContentV1;
+  } catch (_) {
+    window.__selenexLabContentV1 = null;
+  }
 }
 
 // ============================================================
@@ -27,6 +36,7 @@ if (window.__selenexLabContentV1) {
 const OVERLAY_ID    = '__selenex_lab_overlay__';
 const STORAGE_KEY   = 'selenexLabPendingElement';
 const STORAGE_KEY_SELECTION_STATE = 'selenexLabSelectionState';
+const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-05-24-01';
 
 // SVG child elements that are not useful as locator targets
 const SVG_INLINE_TAGS = new Set([
@@ -167,10 +177,10 @@ function getEventTarget(e) {
 
 function chooseBestCaptureTarget(target) {
   if (!target || target === document || target === window) {
-    return pendingSelectionTarget || lastTarget;
+    target = pendingSelectionTarget || lastTarget;
   }
 
-  return target;
+  return climbToUsefulElement(target).element;
 }
 
 function suppressPostCaptureEvents() {
@@ -213,45 +223,63 @@ function suppressPostCaptureEvents() {
  * Returns { element, isSvgElement, climbedFrom }
  */
 function climbToUsefulElement(el) {
-  const originalTag = el.tagName ? el.tagName.toLowerCase() : '';
-  const isSvg = SVG_INLINE_TAGS.has(originalTag) || originalTag === 'svg';
-
-  if (!isSvg) {
+  if (!el || !el.tagName) {
     return { element: el, isSvgElement: false, climbedFrom: null };
   }
 
-  // Walk up from SVG element until we find a good host
-  let current = el.parentElement;
-  while (current) {
-    const tag = current.tagName ? current.tagName.toLowerCase() : '';
-    // Stop at interactive / container elements
-    if (['button', 'a', 'label', 'input', 'select', 'textarea', 'li', 'td', 'th'].includes(tag)) {
-      return { element: current, isSvgElement: true, climbedFrom: originalTag };
-    }
-    // Stop at elements with meaningful locator attributes
-    if (
-      current.id && !isVolatileId(current.id) ||
-      current.getAttribute('aria-label') ||
-      current.getAttribute('data-testid') ||
-      current.getAttribute('data-test') ||
-      current.getAttribute('data-qa') ||
-      current.getAttribute('role')
-    ) {
-      return { element: current, isSvgElement: true, climbedFrom: originalTag };
-    }
-    // Stop at the SVG container itself — use its parent
-    if (tag === 'svg') {
-      const svgParent = current.parentElement;
-      if (svgParent) {
-        return { element: svgParent, isSvgElement: true, climbedFrom: originalTag };
-      }
-      break;
-    }
-    current = current.parentElement;
+  const originalTag = el.tagName.toLowerCase();
+  const isSvg = SVG_INLINE_TAGS.has(originalTag) || originalTag === 'svg';
+  const usefulAncestor = findUsefulAncestor(el);
+
+  if (usefulAncestor && usefulAncestor !== el) {
+    return {
+      element: usefulAncestor,
+      isSvgElement: isSvg,
+      climbedFrom: originalTag,
+    };
   }
 
-  // Could not find a better parent — return original
-  return { element: el, isSvgElement: true, climbedFrom: originalTag };
+  return { element: el, isSvgElement: isSvg, climbedFrom: isSvg ? originalTag : null };
+}
+
+function findUsefulAncestor(el) {
+  let current = el;
+  let depth = 0;
+
+  while (current && current !== document.documentElement && depth < 8) {
+    if (current.id === OVERLAY_ID) return null;
+    if (isUsefulLocatorTarget(current)) return current;
+
+    current = current.parentElement;
+    depth++;
+  }
+
+  return el;
+}
+
+function isUsefulLocatorTarget(el) {
+  if (!el || !el.tagName) return false;
+
+  const tag = el.tagName.toLowerCase();
+  const role = (el.getAttribute('role') || '').toLowerCase();
+
+  if (['button', 'a', 'label', 'input', 'select', 'textarea', 'option'].includes(tag)) {
+    return true;
+  }
+
+  if (['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem', 'option', 'combobox', 'textbox', 'switch'].includes(role)) {
+    return true;
+  }
+
+  if (el.getAttribute('data-testid')) return true;
+  if (el.getAttribute('data-test')) return true;
+  if (el.getAttribute('data-qa')) return true;
+  if (el.getAttribute('data-cy')) return true;
+  if (el.getAttribute('aria-label')) return true;
+  if (el.getAttribute('name')) return true;
+  if (el.getAttribute('placeholder')) return true;
+
+  return Boolean(el.id && !isVolatileId(el.id));
 }
 
 /**
@@ -505,6 +533,7 @@ function destroySelectionHelper() {
 }
 
 window.__selenexLabContentV1 = {
+  build: CONTENT_HELPER_BUILD,
   start: startSelectionMode,
   stop: stopSelectionMode,
   destroy: destroySelectionHelper,

@@ -14,6 +14,7 @@ const STORAGE_KEY_PENDING = 'selenexLabPendingElement';
 const STORAGE_KEY_HISTORY = 'selenexLabHistory';
 const MAX_HISTORY_ITEMS   = 10;
 const GITHUB_URL          = 'https://github.com/nadaS90';
+const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-05-24-01';
 
 // ============================================================
 //  STATE
@@ -35,9 +36,11 @@ const outputModeSelect    = document.getElementById('outputModeSelect');
 const chkUseJsClick       = document.getElementById('chkUseJsClick');
 const chkGenerateAssert   = document.getElementById('chkGenerateAssert');
 const chkIncludeDefaultText = document.getElementById('chkIncludeDefaultText');
+const chkIncludeWrappers = document.getElementById('chkIncludeWrappers');
 const chkUseJsClickWrapper = document.getElementById('chkUseJsClickWrapper');
 const chkGenerateAssertWrapper = document.getElementById('chkGenerateAssertWrapper');
 const chkIncludeDefaultTextWrapper = document.getElementById('chkIncludeDefaultTextWrapper');
+const chkIncludeWrappersWrapper = document.getElementById('chkIncludeWrappersWrapper');
 const codeArea            = document.getElementById('codeArea');
 const btnCopyCode         = document.getElementById('btnCopyCode');
 const locatorList         = document.getElementById('locatorList');
@@ -60,6 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
   checkPendingElement();
   setupEventListeners();
+  toggleSendKeysInput();
+  updateJavaScriptOptionState();
 });
 
 // ============================================================
@@ -72,6 +77,7 @@ function setupEventListeners() {
 
   actionSelect.addEventListener('change', () => {
     toggleSendKeysInput();
+    updateJavaScriptOptionState();
     regenerateCode();
   });
 
@@ -90,6 +96,11 @@ function setupEventListeners() {
   });
 
   chkIncludeDefaultText.addEventListener('change', () => {
+    updateCheckboxStyles();
+    regenerateCode();
+  });
+
+  chkIncludeWrappers.addEventListener('change', () => {
     updateCheckboxStyles();
     regenerateCode();
   });
@@ -189,14 +200,15 @@ async function sendStartSelectionMessage(tabId, sessionId) {
   const activateSelectionInFrames = async () => {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      func: () => {
+      func: (expectedBuild) => {
         const helper = window.__selenexLabContentV1;
-        if (helper && typeof helper.start === 'function') {
+        if (helper && helper.build === expectedBuild && typeof helper.start === 'function') {
           helper.start(sessionId);
           return true;
         }
         return false;
       },
+      args: [CONTENT_HELPER_BUILD],
     });
 
     return results.some((item) => item && item.result === true);
@@ -420,7 +432,7 @@ function buildAllCandidates(el) {
 
   // ── Tag fallback (always last resort, score 1) ─────────────────────────
   const tag = el.tag || 'div';
-  if (!['svg', 'path', 'circle', 'rect', 'g', 'a'].includes(tag)) {
+  if (!['svg', 'path', 'circle', 'rect', 'g', 'a', 'button', 'div', 'span'].includes(tag)) {
     add('css', tag, 1, 'weak', tag, 'tag (fallback)');
   }
 
@@ -604,7 +616,7 @@ function isGenericText(text) {
   const t = String(text).trim().toLowerCase();
   if (t.length <= 1)       return true;
   // Very short common words that aren't distinguishing
-  const generic = new Set(['ok', 'go', 'x', 'no', 'yes', 'on', 'off', 'up', 'down', 'left', 'right', 'next', 'back']);
+  const generic = new Set(['ok', 'go', 'x', 'no', 'yes', 'on', 'off', 'up', 'down', 'left', 'right']);
   if (generic.has(t))      return true;
   // Pure whitespace
   if (!t.replace(/\s/g, '')) return true;
@@ -629,11 +641,21 @@ function isTextLocatorCandidate(el) {
 
 function buildNormalizedTextXPath(tag, text) {
   const safeTag = /^[a-z][a-z0-9-]*$/i.test(tag) ? tag.toLowerCase() : '*';
-  return `//${safeTag}[normalize-space(.)="${escapeXPathDoubleQuotedText(text)}"]`;
+  return `//${safeTag}[normalize-space(.)=${quoteXPathText(text)}]`;
 }
 
-function escapeXPathDoubleQuotedText(text) {
-  return String(text || '').replace(/"/g, '\\"');
+function quoteXPathText(text) {
+  const value = String(text || '');
+
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+
+  return 'concat(' + value.split("'").map((part) => `'${part}'`).join(', "\'", ') + ')';
 }
 
 // ============================================================
@@ -755,9 +777,10 @@ function regenerateCode() {
   const action = normalizeNadaActionForElement(currentElement, actionSelect.value);
   const sendKeysText = chkIncludeDefaultText.checked ? sendKeysInput.value.trim() : '';
   const options = {
-    forceJsClick: chkUseJsClick.checked,
+    useJavaScript: chkUseJsClick.checked,
     generateAssert: chkGenerateAssert.checked,
     outputMode: outputModeSelect.value,
+    includeWrappers: chkIncludeWrappers.checked,
   };
   codeArea.textContent = generateNadaFrameworkCode(currentElement, currentLocator, action, sendKeysText, options);
 }
@@ -787,13 +810,21 @@ function generateNadaFrameworkCode(el, loc, action, sendKeysText = '', options =
 
   switch (action) {
     case 'sendKeys':
-      lines.push(...buildNadaEnterTextMethod(model, byExpression, sendKeysText));
+      lines.push(...(options.useJavaScript
+        ? buildNadaEnterTextWithJavaScriptMethod(model, byExpression, sendKeysText)
+        : buildNadaEnterTextMethod(model, byExpression, sendKeysText)));
+      break;
+    case 'sendTextWithClear':
+      lines.push(...buildNadaEnterTextWithClearMethod(model, byExpression, sendKeysText));
       break;
     case 'select':
       lines.push(...buildNadaSelectDropdownMethod(model, byExpression));
       break;
     case 'getText':
       lines.push(...buildNadaGetTextMethod(model, byExpression));
+      break;
+    case 'hover':
+      lines.push(...buildNadaHoverMethod(model, byExpression));
       break;
     case 'assertVisible':
       lines.push(...buildNadaAssertVisibleMethod(model, byExpression));
@@ -809,7 +840,13 @@ function generateNadaFrameworkCode(el, loc, action, sendKeysText = '', options =
     lines.push(...buildNadaAssertVisibleMethod(model, byExpression));
   }
 
-  return lines.join('\n');
+  const generatedCode = lines.join('\n');
+
+  if (options.includeWrappers && options.outputMode !== 'locatorOnly') {
+    return generatedCode + '\n\n' + buildNadaWrapperMethods(action, model, options);
+  }
+
+  return generatedCode;
 }
 
 function buildNadaCodeModel(el, loc, options = {}) {
@@ -824,7 +861,7 @@ function buildNadaCodeModel(el, loc, options = {}) {
     locatorName: `${baseName}${controlType}Locator`,
     locatorStrategy: locator.strategy,
     locatorValue: locator.value,
-    useJsClick: options.forceJsClick || shouldUseNadaJavaScriptClick(el),
+    useJsClick: options.useJavaScript || shouldUseNadaJavaScriptClick(el),
   };
 }
 
@@ -897,6 +934,36 @@ function buildNadaEnterTextMethod(model, byExpression, sendKeysText = '') {
   ];
 }
 
+function buildNadaEnterTextWithJavaScriptMethod(model, byExpression, sendKeysText = '') {
+  const parameterName = toNadaInputParameterName(model.baseName);
+  const dataArgument = getSendTextDataArgument(sendKeysText, parameterName);
+  const methodSignature = sendKeysText
+    ? `public void Enter${model.baseName}WithJavaScript()`
+    : `public void Enter${model.baseName}WithJavaScript(string ${parameterName})`;
+
+  return [
+    methodSignature,
+    `{`,
+    `driver.SendTextWithJavaScript(${byExpression}, ${dataArgument}, "${splitPascalCase(model.baseName)}");`,
+    `}`,
+  ];
+}
+
+function buildNadaEnterTextWithClearMethod(model, byExpression, sendKeysText = '') {
+  const parameterName = toNadaInputParameterName(model.baseName);
+  const dataArgument = getSendTextDataArgument(sendKeysText, parameterName);
+  const methodSignature = sendKeysText
+    ? `public void Enter${model.baseName}WithClear()`
+    : `public void Enter${model.baseName}WithClear(string ${parameterName})`;
+
+  return [
+    methodSignature,
+    `{`,
+    `driver.SendTextWithClearUsingJS(${byExpression}, ${dataArgument}, "${splitPascalCase(model.baseName)}");`,
+    `}`,
+  ];
+}
+
 function getSendTextDataArgument(sendKeysText, parameterName) {
   if (!sendKeysText) return parameterName;
 
@@ -932,6 +999,15 @@ function buildNadaGetTextMethod(model, byExpression) {
   ];
 }
 
+function buildNadaHoverMethod(model, byExpression) {
+  return [
+    `public void HoverOn${model.baseName}${model.controlType}()`,
+    `{`,
+    `driver.HoverElement(${byExpression}, "${model.displayName}");`,
+    `}`,
+  ];
+}
+
 function buildNadaAssertVisibleMethod(model, byExpression) {
   return [
     `public void Assert${model.baseName}${model.controlType}IsVisible()`,
@@ -943,7 +1019,7 @@ function buildNadaAssertVisibleMethod(model, byExpression) {
 }
 
 function normalizeNadaActionForElement(el, action) {
-  if (getNadaControlType(el) === 'Dropdown' && (action === 'click' || action === 'sendKeys')) {
+  if (getNadaControlType(el) === 'Dropdown' && (action === 'click' || action === 'sendKeys' || action === 'sendTextWithClear')) {
     return 'select';
   }
   return action;
@@ -1071,6 +1147,146 @@ function escapeCssSingleQuotedValue(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+function buildNadaWrapperMethods(action, model, options = {}) {
+  const names = new Set();
+
+  if (action === 'click') {
+    names.add(model.useJsClick ? 'ClickElementUsingJs' : 'ClickElement');
+  }
+
+  if (action === 'sendKeys') {
+    names.add(options.useJavaScript ? 'SendTextWithJavaScript' : 'SendText');
+  }
+
+  if (action === 'sendTextWithClear') names.add('SendTextWithClearUsingJS');
+  if (action === 'select') names.add('SelectDropdownByText');
+  if (action === 'hover') names.add('HoverElement');
+  if (action === 'assertVisible' || options.generateAssert) names.add('IsElementPresentAndDisplayed');
+
+  const snippets = [];
+  names.forEach((name) => snippets.push(getNadaWrapperMethodSnippet(name)));
+
+  return ['// Wrapper methods used by the generated code', ...snippets.filter(Boolean)].join('\n\n');
+}
+
+function getNadaWrapperMethodSnippet(name) {
+  const snippets = {
+    SendText: [
+      'public static void SendText(this IWebDriver driver, By element, string textValue, string elementName)',
+      '{',
+      '    PerformAction(driver, element, elementName, () =>',
+      '    {',
+      '        var webElement = driver.FindElement(element);',
+      '        driver.HighlightElement(webElement);',
+      '        webElement.Clear();',
+      '        webElement.SendKeys(textValue);',
+      '    });',
+      '}',
+    ],
+    SendTextWithJavaScript: [
+      'public static void SendTextWithJavaScript(this IWebDriver driver, By element, string textValue, string elementName)',
+      '{',
+      '    IWebElement webElement = driver.FindElement(element);',
+      '    driver.HighlightElement(webElement);',
+      '    IJavaScriptExecutor js = (IJavaScriptExecutor)driver;',
+      '    js.ExecuteScript("arguments[0].value = arguments[1];", webElement, textValue);',
+      '}',
+    ],
+    SendTextWithClearUsingJS: [
+      'public static void SendTextWithClearUsingJS(this IWebDriver driver, By element, string textValue, string elementName)',
+      '{',
+      '    PerformAction(driver, element, elementName, () =>',
+      '    {',
+      '        var webElement = driver.FindElement(element);',
+      '        driver.HighlightElement(webElement);',
+      '        driver.ClickElement(element, elementName);',
+      '        System.Threading.Thread.Sleep(1000);',
+      `        ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].value = '';", webElement);`,
+      '        webElement.SendKeys(textValue);',
+      '    });',
+      '}',
+    ],
+    ClickElement: [
+      'public static void ClickElement(this IWebDriver driver, By element, string elementName)',
+      '{',
+      '    PerformAction(driver, element, elementName, () =>',
+      '    {',
+      '        var webElement = driver.FindElement(element);',
+      '        driver.HighlightElement(webElement);',
+      '        driver.ImplicitWait();',
+      '        webElement.Click();',
+      '    });',
+      '}',
+    ],
+    ClickElementUsingJs: [
+      'public static void ClickElementUsingJs(this IWebDriver driver, By element, string elementName)',
+      '{',
+      '    PerformAction(driver, element, elementName, () =>',
+      '    {',
+      '        var webElement = driver.FindElement(element);',
+      '        driver.HighlightElement(webElement);',
+      '        ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", webElement);',
+      '    });',
+      '}',
+    ],
+    HoverElement: [
+      'public static void HoverElement(this IWebDriver driver, By element, string elementName, bool hoverBeforeClick = false)',
+      '{',
+      '    PerformAction(driver, element, elementName, () =>',
+      '    {',
+      '        var webElement = driver.FindElement(element);',
+      '        driver.HighlightElement(webElement);',
+      '        driver.ImplicitWait();',
+      '        Actions action = new Actions(driver);',
+      '        action.MoveToElement(webElement).Perform();',
+      '    });',
+      '}',
+    ],
+    SelectDropdownByText: [
+      'public static void SelectDropdownByText(this IWebDriver driver, By element, string value, string elementName)',
+      '{',
+      '    var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(WaitTime));',
+      '    wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(element));',
+      '    var dropdown = new SelectElement(driver.FindElement(element));',
+      '    dropdown.SelectByText(value);',
+      '}',
+    ],
+    IsElementPresentAndDisplayed: [
+      'public static bool IsElementPresentAndDisplayed(this IWebDriver driver, By element)',
+      '{',
+      '    try',
+      '    {',
+      '        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(WaitTime));',
+      '        wait.Until(SeleniumExtras.WaitHelpers.ExpectedConditions.ElementIsVisible(element));',
+      '        return driver.FindElement(element).Displayed;',
+      '    }',
+      '    catch (Exception)',
+      '    {',
+      '        return false;',
+      '    }',
+      '}',
+    ],
+  };
+
+  return snippets[name] ? snippets[name].join('\n') : '';
+}
+
+function updateJavaScriptOptionState() {
+  const isAlwaysJavaScript = actionSelect.value === 'sendTextWithClear';
+
+  if (isAlwaysJavaScript && !chkUseJsClick.disabled) {
+    chkUseJsClick.dataset.previousChecked = chkUseJsClick.checked ? 'true' : 'false';
+    chkUseJsClick.checked = true;
+  }
+
+  if (!isAlwaysJavaScript && chkUseJsClick.disabled) {
+    chkUseJsClick.checked = chkUseJsClick.dataset.previousChecked === 'true';
+  }
+
+  chkUseJsClick.disabled = isAlwaysJavaScript;
+  updateCheckboxStyles();
+}
+
 // ============================================================
 //  SVG WARNING BANNER
 // ============================================================
@@ -1090,15 +1306,17 @@ function hideSvgWarning() {
 // ============================================================
 function updateCheckboxStyles() {
   chkUseJsClickWrapper.classList.toggle('checked', chkUseJsClick.checked);
+  chkUseJsClickWrapper.classList.toggle('disabled', chkUseJsClick.disabled);
   chkGenerateAssertWrapper.classList.toggle('checked', chkGenerateAssert.checked);
   chkIncludeDefaultTextWrapper.classList.toggle('checked', chkIncludeDefaultText.checked);
+  chkIncludeWrappersWrapper.classList.toggle('checked', chkIncludeWrappers.checked);
 }
 
 // ============================================================
 //  SEND KEYS TOGGLE
 // ============================================================
 function toggleSendKeysInput() {
-  sendKeysGroup.classList.toggle('hidden', actionSelect.value !== 'sendKeys');
+  sendKeysGroup.classList.toggle('hidden', !['sendKeys', 'sendTextWithClear'].includes(actionSelect.value));
 }
 
 // ============================================================

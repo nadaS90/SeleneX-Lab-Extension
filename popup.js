@@ -14,7 +14,8 @@ const STORAGE_KEY_PENDING = 'selenexLabPendingElement';
 const STORAGE_KEY_HISTORY = 'selenexLabHistory';
 const MAX_HISTORY_ITEMS   = 10;
 const GITHUB_URL          = 'https://github.com/nadaS90';
-const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-05-24-01';
+const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-06-07-02';
+const TARGET_MARKER_ATTRIBUTE = 'data-selenex-lab-target';
 
 // ============================================================
 //  STATE
@@ -280,7 +281,7 @@ async function processElement(data, source = {}) {
 
   // Show initial render while async uniqueness check runs
   locators       = candidates;
-  currentLocator = locators[0] || null;
+  currentLocator = null;
   renderLocators(false); // false = "checking" mode
   regenerateCode();
 
@@ -288,7 +289,7 @@ async function processElement(data, source = {}) {
   try {
     const target = await getUniquenessTarget(data, source);
     if (target) {
-      await runUniquenessCheck(target.tabId, candidates, target.frameId);
+      await runUniquenessCheck(target.tabId, candidates, data.selectionId, target.frameId);
     }
   } catch (_) {
     // Proceed without uniqueness data — not critical
@@ -296,7 +297,7 @@ async function processElement(data, source = {}) {
 
   // Re-rank after uniqueness data is in
   locators       = finalizeLocators(candidates);
-  currentLocator = locators[0] || null;
+  currentLocator = locators.find(isVerifiedUniqueLocator) || null;
   renderLocators(true);   // true = checks complete
   regenerateCode();
 
@@ -355,6 +356,7 @@ function buildAllCandidates(el) {
       score,
       status,
       matchCount:   null,
+      targetMatch:  null,
       displayLabel: displayLabel || type.toUpperCase(),
     });
   };
@@ -417,6 +419,10 @@ function buildAllCandidates(el) {
   if (isTextLocatorCandidate(el)) {
     add('xpath', buildNormalizedTextXPath(el.tag || '*', el.textContent), 2, 'text-xpath',
       null, 'text XPath');
+
+    buildAncestorQualifiedXPathCandidates(el).forEach((candidate) => {
+      add('xpath', candidate.value, candidate.score, candidate.status, null, candidate.label);
+    });
   }
 
   if (el.role && el.role !== 'presentation' && el.role !== 'none') {
@@ -499,20 +505,52 @@ function buildSmartCss(el) {
  * Executes CSS querySelectorAll for each candidate in the live page,
  * then updates each candidate's matchCount and status in-place.
  */
-async function runUniquenessCheck(tabId, candidates, frameId = null) {
-  // Build a simple list of CSS query strings in the same order as candidates
-  const queries = candidates.map((c) => c.cssQuery || null);
+async function runUniquenessCheck(tabId, candidates, selectionId, frameId = null) {
+  const queries = candidates.map((candidate) => ({
+    type: candidate.type,
+    value: candidate.value,
+    cssQuery: candidate.cssQuery || null,
+  }));
 
-  // Script that runs inside the active tab's main frame
-  const pageScript = (queryList) => {
-    return queryList.map((q) => {
-      if (!q) return null;
+  const pageScript = (queryList, markerAttribute, markerValue) => {
+    const target = document.querySelector(`[${markerAttribute}="${markerValue}"]`);
+
+    const evaluateXPath = (xpath) => {
+      const snapshot = document.evaluate(
+        xpath,
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null
+      );
+      const matches = [];
+      for (let index = 0; index < snapshot.snapshotLength; index++) {
+        matches.push(snapshot.snapshotItem(index));
+      }
+      return matches;
+    };
+
+    const validation = queryList.map((query) => {
       try {
-        return document.querySelectorAll(q).length;
-      } catch (e) {
-        return -1; // invalid CSS
+        const matches = query.type === 'xpath'
+          ? evaluateXPath(query.value)
+          : Array.from(document.querySelectorAll(query.cssQuery || query.value));
+
+        return {
+          count: matches.length,
+          targetMatch: Boolean(target && matches.length === 1 && matches[0] === target),
+          targetFound: Boolean(target),
+        };
+      } catch (_) {
+        return { count: -1, targetMatch: false, targetFound: Boolean(target) };
       }
     });
+
+    if (target && target.getAttribute(markerAttribute) === markerValue) {
+      target.removeAttribute(markerAttribute);
+    }
+
+    return validation;
   };
 
   const target = Number.isInteger(frameId)
@@ -521,52 +559,54 @@ async function runUniquenessCheck(tabId, candidates, frameId = null) {
 
   const results = await chrome.scripting.executeScript({
     target,
-    func:    pageScript,
-    args:    [queries],
+    func: pageScript,
+    args: [queries, TARGET_MARKER_ATTRIBUTE, selectionId],
   });
 
-  const counts = results && results[0] && results[0].result;
-  if (!counts) return;
+  const validation = results && results[0] && results[0].result;
+  if (!validation) return;
 
-  // Update each candidate with real uniqueness data
-  candidates.forEach((candidate, i) => {
-    const count = counts[i];
-    candidate.matchCount = count;
+  candidates.forEach((candidate, index) => {
+    const result = validation[index];
+    if (!result) return;
 
-    // Test-ready attributes always keep their badge regardless
-    if (['testid', 'testattr', 'qa', 'cy'].includes(candidate.type)) return;
+    candidate.matchCount = result.count;
+    candidate.targetMatch = result.targetMatch;
 
-    if (count === null)       { /* no query — keep initial status */ return; }
-    if (count === -1)         { candidate.status = 'invalid'; candidate.score = 0; return; }
-    if (count === 0)          { candidate.status = 'invalid'; candidate.score = 0; return; }
-    if (count === 1) {
-      // Unique — upgrade status based on original tier
-      if (['excellent', 'good'].includes(candidate.status)) {
-        // keep original excellent/good
-      } else if (candidate.status === 'acceptable') {
-        candidate.status = 'stable';  // acceptable + unique = stable
-      } else if (candidate.status === 'weak') {
-        candidate.status = 'unique';  // weak + unique = unique is fine
-      } else {
-        candidate.status = 'unique';
-      }
+    if (result.count === -1 || result.count === 0) {
+      candidate.status = 'invalid';
+      candidate.score = 0;
       return;
     }
-    if (count > 1) {
-      // Not unique — downgrade
-      candidate.status = 'multiple';
-      candidate.score  = Math.max(1, candidate.score - 2);
+
+    if (result.count === 1 && result.targetMatch) {
+      candidate.status = 'verified';
+      candidate.score = Math.min(7, candidate.score + 2);
+      return;
     }
+
+    if (result.count === 1 && result.targetFound && !result.targetMatch) {
+      candidate.status = 'wrong-target';
+      candidate.score = 0;
+      return;
+    }
+
+    if (result.count > 1) {
+      candidate.status = 'multiple';
+      candidate.score = Math.max(1, candidate.score - 2);
+      return;
+    }
+
+    candidate.status = 'unverified';
   });
 }
-
 /**
  * After uniqueness data is populated, sort and deduplicate candidates.
  * Returns a clean ranked list.
  */
 function finalizeLocators(candidates) {
   // Remove invalid selectors
-  const valid = candidates.filter((c) => c.status !== 'invalid' && c.score > 0);
+  const valid = candidates.filter((c) => !['invalid', 'wrong-target'].includes(c.status) && c.score > 0);
 
   // Deduplicate: if two candidates have the exact same cssQuery, keep the one with higher score
   const seen = new Set();
@@ -578,14 +618,21 @@ function finalizeLocators(candidates) {
   });
 
   // Sort: score descending, then by tier preference
-  const tierOrder = ['test-ready', 'excellent', 'unique', 'good', 'stable', 'acceptable', 'text-xpath', 'multiple', 'weak', 'volatile'];
+  const tierOrder = ['verified', 'test-ready', 'excellent', 'unique', 'good', 'stable', 'acceptable', 'text-xpath', 'unverified', 'multiple', 'weak', 'volatile'];
   deduped.sort((a, b) => {
+    const verifiedDifference = Number(isVerifiedUniqueLocator(b)) - Number(isVerifiedUniqueLocator(a));
+    if (verifiedDifference !== 0) return verifiedDifference;
     if (b.score !== a.score) return b.score - a.score;
     return tierOrder.indexOf(a.status) - tierOrder.indexOf(b.status);
   });
 
   return deduped;
 }
+
+function isVerifiedUniqueLocator(locator) {
+  return Boolean(locator && locator.matchCount === 1 && locator.targetMatch === true);
+}
+
 
 // ============================================================
 //  VOLATILE / GENERIC DETECTION HELPERS
@@ -632,6 +679,74 @@ function isGenericText(text) {
   return false;
 }
 
+function buildAncestorQualifiedXPathCandidates(el) {
+  if (!el || !el.textContent || !Array.isArray(el.ancestors)) return [];
+
+  const tag = /^[a-z][a-z0-9-]*$/i.test(el.tag || '') ? el.tag.toLowerCase() : '*';
+  const childExpression = `${tag}[normalize-space(.)=${quoteXPathText(el.textContent)}]`;
+  const candidates = [];
+  const seen = new Set();
+
+  const add = (ancestorExpression, score, label) => {
+    const value = `${ancestorExpression}//${childExpression}`;
+    if (seen.has(value)) return;
+    seen.add(value);
+    candidates.push({ value, score, status: 'acceptable', label });
+  };
+
+  el.ancestors.slice(0, 8).forEach((ancestor) => {
+    const ancestorTag = /^[a-z][a-z0-9-]*$/i.test(ancestor.tag || '')
+      ? ancestor.tag.toLowerCase()
+      : '*';
+
+    if (ancestor.id && !isVolatileId(ancestor.id)) {
+      add(`//${ancestorTag}[@id=${quoteXPathText(ancestor.id)}]`, 5, 'ancestor id + text');
+    }
+
+    const stableAttributes = [
+      ['data-testid', ancestor.dataTestId],
+      ['data-test', ancestor.dataTest],
+      ['data-qa', ancestor.dataQa],
+      ['data-cy', ancestor.dataCy],
+      ['aria-label', ancestor.ariaLabel],
+      ['name', ancestor.name],
+    ];
+
+    stableAttributes.forEach(([name, value]) => {
+      if (value && !isGenericText(value)) {
+        add(`//${ancestorTag}[@${name}=${quoteXPathText(value)}]`, 4, `ancestor ${name} + text`);
+      }
+    });
+
+    const classTokens = getStableClassTokens(ancestor.className);
+    classTokens.slice(0, 3).forEach((classToken) => {
+      const classExpression = `contains(concat(' ', normalize-space(@class), ' '), ${quoteXPathText(` ${classToken} `)})`;
+      add(`//${ancestorTag}[${classExpression}]`, 4, 'ancestor class + text');
+    });
+
+    if (classTokens.length > 1) {
+      const classExpression = classTokens.slice(0, 2)
+        .map((classToken) => `contains(concat(' ', normalize-space(@class), ' '), ${quoteXPathText(` ${classToken} `)})`)
+        .join(' and ');
+      add(`//${ancestorTag}[${classExpression}]`, 4, 'ancestor classes + text');
+    }
+  });
+
+  return candidates;
+}
+
+function getStableClassTokens(className) {
+  if (!className) return [];
+
+  return String(className)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => /^[A-Za-z][A-Za-z0-9_-]{1,39}$/.test(token))
+    .filter((token) => !/\d{3,}/.test(token))
+    .filter((token) => !/^(ng-|react-|ember-|vue-|css-|sc-)/i.test(token))
+    .filter((token) => !/[a-f0-9]{8,}/i.test(token));
+}
 function isStableHref(href) {
   if (!href) return false;
   const value = String(href).trim();
@@ -688,7 +803,7 @@ function renderLocators(checksComplete = true) {
 
   locators.forEach((loc, idx) => {
     const isActive = (loc === currentLocator);
-    const isBest   = (idx === 0);
+    const isBest   = checksComplete && isVerifiedUniqueLocator(loc) && loc === locators.find(isVerifiedUniqueLocator);
 
     const item = document.createElement('div');
     item.className = 'locator-item' +
@@ -731,6 +846,7 @@ function renderLocators(checksComplete = true) {
 
     // Click handler — make active, regenerate code
     item.addEventListener('click', () => {
+      if (checksComplete && !isVerifiedUniqueLocator(loc)) return;
       currentLocator = loc;
       renderLocators(checksComplete);
       regenerateCode();
@@ -743,6 +859,9 @@ function renderLocators(checksComplete = true) {
 /** Maps a status key to a display label string. */
 function qualityBadgeLabel(status, count) {
   switch (status) {
+    case 'verified':    return 'Verified Unique (1)';
+    case 'wrong-target': return 'Wrong Element';
+    case 'unverified':  return '� Unverified';
     case 'test-ready':  return '⚡ Test-Ready';
     case 'excellent':   return '★ Excellent';
     case 'unique':      return '✓ Unique';
@@ -779,7 +898,10 @@ function starsColor(score) {
 // ============================================================
 function regenerateCode() {
   if (!currentElement || !currentLocator) {
-    codeArea.innerHTML = '<span class="code-placeholder">// Select an element to generate code...</span>';
+    const message = currentElement
+      ? '// No verified unique locator found'
+      : '// Select an element to generate code...';
+    codeArea.innerHTML = `<span class="code-placeholder">${message}</span>`;
     return;
   }
 

@@ -36,7 +36,8 @@ if (window.__selenexLabContentV1) {
 const OVERLAY_ID    = '__selenex_lab_overlay__';
 const STORAGE_KEY   = 'selenexLabPendingElement';
 const STORAGE_KEY_SELECTION_STATE = 'selenexLabSelectionState';
-const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-05-24-01';
+const TARGET_MARKER_ATTRIBUTE = 'data-selenex-lab-target';
+const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-06-07-02';
 
 // SVG child elements that are not useful as locator targets
 const SVG_INLINE_TAGS = new Set([
@@ -140,8 +141,17 @@ function captureSelectedElement(e, explicitTarget = null) {
   suppressPostCaptureEvents();
   stopSelectionMode();
 
+  // Mark the exact selected node so popup-side validation can verify identity.
+  const selectionId = createSelectionId();
+  target.setAttribute(TARGET_MARKER_ATTRIBUTE, selectionId);
+  setTimeout(() => {
+    if (target.getAttribute(TARGET_MARKER_ATTRIBUTE) === selectionId) {
+      target.removeAttribute(TARGET_MARKER_ATTRIBUTE);
+    }
+  }, 30000);
+
   // Collect and broadcast element data
-  const data = collectElementData(target);
+  const data = collectElementData(target, selectionId);
   chrome.storage.local.set({
     [STORAGE_KEY]: data,
     [STORAGE_KEY_SELECTION_STATE]: {
@@ -294,7 +304,7 @@ function chooseBestVisualTarget(el) {
 // ============================================================
 //  ELEMENT DATA COLLECTION
 // ============================================================
-function collectElementData(rawEl) {
+function collectElementData(rawEl, selectionId = createSelectionId()) {
   const { element: el, isSvgElement, climbedFrom } = climbToUsefulElement(rawEl);
 
   const tag         = (el.tagName || 'UNKNOWN').toLowerCase();
@@ -330,22 +340,48 @@ function collectElementData(rawEl) {
 
   // Frame path from this window up to the top
   const framePath = getFramePath();
+  const ancestors = collectAncestorContext(el);
 
   return {
-    selectionId: createSelectionId(),
+    selectionId,
     selectedAt: Date.now(),
     pageUrl: location.href,
     tag, id, name, ariaLabel, ariaLabelBy,
     placeholder, title, role, type, value, href, className,
     dataTestId, dataTest, dataQa, dataCy,
     textContent, linkedLabel,
-    parentTag, parentId, parentClass,
+    parentTag, parentId, parentClass, ancestors,
     framePath,
     isSvgElement,
     climbedFrom,
   };
 }
 
+function collectAncestorContext(el) {
+  const ancestors = [];
+  let current = el ? el.parentElement : null;
+  let depth = 0;
+
+  while (current && current !== document.documentElement && depth < 8) {
+    ancestors.push({
+      tag: (current.tagName || '').toLowerCase(),
+      id: current.id || null,
+      name: current.getAttribute('name') || null,
+      role: current.getAttribute('role') || null,
+      ariaLabel: current.getAttribute('aria-label') || null,
+      dataTestId: current.getAttribute('data-testid') || null,
+      dataTest: current.getAttribute('data-test') || null,
+      dataQa: current.getAttribute('data-qa') || null,
+      dataCy: current.getAttribute('data-cy') || null,
+      className: current.className ? String(current.className).trim() : null,
+      depth,
+    });
+    current = current.parentElement;
+    depth++;
+  }
+
+  return ancestors;
+}
 /** Returns trimmed, normalized, length-limited text content. */
 function sanitizeText(raw) {
   if (!raw) return null;

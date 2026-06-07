@@ -468,9 +468,18 @@ function buildSmartCss(el) {
   if (el.ariaLabel) {
     push(`${tag}[aria-label="${cssAttrEscape(el.ariaLabel)}"]`, 3, 'acceptable', `${tag}[aria-label]`);
   }
+  // Option value scoped to its owning select identifies the clicked option.
+  if (tag === 'option' && el.value) {
+    const optionSelector = `option[value='${escapeCssSingleQuotedValue(el.value)}']`;
+    if (el.parentId && !isVolatileId(el.parentId)) {
+      push(`#${cssIdEscape(el.parentId)} > ${optionSelector}`, 4, 'good', 'select > option[value]');
+    } else {
+      push(optionSelector, 3, 'acceptable', 'option[value]');
+    }
+  }
 
   // Parent > tag — if parent has a stable non-volatile ID
-  if (el.parentId && !isVolatileId(el.parentId) && tag !== 'div' && tag !== 'span') {
+  if (el.parentId && !isVolatileId(el.parentId) && tag !== 'div' && tag !== 'span' && tag !== 'option') {
     push(`#${cssIdEscape(el.parentId)} > ${tag}`, 2, 'acceptable', 'parent > child');
   }
 

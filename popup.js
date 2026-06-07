@@ -1,5 +1,5 @@
 /**
- * popup.js - SeleneX Lab v1
+ * popup.js - SeleneX Lab v2
  *
  * Smart locator engine with tier-based scoring, async uniqueness checking,
  * quality badges, Nada-style C# code generation, and GitHub attribution.
@@ -13,6 +13,7 @@
 const STORAGE_KEY_PENDING = 'selenexLabPendingElement';
 const STORAGE_KEY_HISTORY = 'selenexLabHistory';
 const MAX_HISTORY_ITEMS   = 10;
+const MAX_LOCATOR_RESULTS = 7;
 const GITHUB_URL          = 'https://github.com/nadaS90';
 const CONTENT_HELPER_BUILD = 'selenex-lab-content-2026-06-07-02';
 const TARGET_MARKER_ATTRIBUTE = 'data-selenex-lab-target';
@@ -354,6 +355,7 @@ function buildAllCandidates(el) {
       value:        v,
       cssQuery:     cssQuery  || null,
       score,
+      baseScore: score,
       status,
       matchCount:   null,
       targetMatch:  null,
@@ -626,7 +628,7 @@ function finalizeLocators(candidates) {
     return tierOrder.indexOf(a.status) - tierOrder.indexOf(b.status);
   });
 
-  return deduped;
+  return deduped.slice(0, MAX_LOCATOR_RESULTS);
 }
 
 function isVerifiedUniqueLocator(locator) {
@@ -799,9 +801,10 @@ function renderLocators(checksComplete = true) {
     return;
   }
 
-  locatorCountLabel.textContent = `${locators.length} found`;
+  const displayedLocators = locators.slice(0, MAX_LOCATOR_RESULTS);
+  locatorCountLabel.textContent = `${displayedLocators.length} found`;
 
-  locators.forEach((loc, idx) => {
+  displayedLocators.forEach((loc, idx) => {
     const isActive = (loc === currentLocator);
     const isBest   = checksComplete && isVerifiedUniqueLocator(loc) && loc === locators.find(isVerifiedUniqueLocator);
 
@@ -822,26 +825,47 @@ function renderLocators(checksComplete = true) {
     // Quality chip
     const qBadge = document.createElement('span');
     const status = checksComplete ? loc.status : 'checking';
-    qBadge.className = `quality-badge qb-${status}`;
-    qBadge.textContent = qualityBadgeLabel(status, loc.matchCount);
+    const quality = getLocatorDisplayQuality(loc, status);
+    qBadge.className = `quality-badge qb-${quality.key}`;
+    qBadge.textContent = quality.label;
+
+    const badgeGroup = document.createElement('div');
+    badgeGroup.className = 'locator-badges';
+    badgeGroup.appendChild(typeBadge);
+    badgeGroup.appendChild(qBadge);
+
+    const rankingGroup = document.createElement('div');
+    rankingGroup.className = 'locator-ranking';
+
+    if (isBest) {
+      const bestBadge = document.createElement('span');
+      bestBadge.className = 'best-badge';
+      bestBadge.textContent = 'Best';
+      rankingGroup.appendChild(bestBadge);
+    }
 
     // Stars
     const stars = document.createElement('span');
     stars.className = 'locator-stars';
-    stars.style.color = starsColor(loc.score);
-    stars.textContent = renderStars(loc.score);
+    stars.style.color = quality.color;
+    stars.textContent = renderStars(quality.stars);
+    rankingGroup.appendChild(stars);
 
-    topRow.appendChild(typeBadge);
-    topRow.appendChild(qBadge);
-    topRow.appendChild(stars);
+    topRow.appendChild(badgeGroup);
+    topRow.appendChild(rankingGroup);
 
     // ── Value preview row ─────────────────────────────────────────────
+    const sourceRow = document.createElement('div');
+    sourceRow.className = 'locator-source';
+    sourceRow.textContent = `Uses: ${getLocatorSourceLabel(loc)}`;
+
     const valueRow = document.createElement('div');
     valueRow.className = 'locator-value';
     valueRow.title     = loc.value;
     valueRow.textContent = loc.value;
 
     item.appendChild(topRow);
+    item.appendChild(sourceRow);
     item.appendChild(valueRow);
 
     // Click handler — make active, regenerate code
@@ -856,25 +880,82 @@ function renderLocators(checksComplete = true) {
   });
 }
 
+/** Returns the compact quality label, stars, and color shown in the locator card. */
+function getLocatorDisplayQuality(locator, status) {
+  if (status === 'checking') {
+    return { key: 'checking', label: 'Checking...', stars: 0, color: '#64748b' };
+  }
+
+  if (status === 'multiple') {
+    const count = Number.isInteger(locator.matchCount) ? locator.matchCount : '?';
+    return { key: 'multiple', label: `Multiple (${count})`, stars: 1, color: '#ef4444' };
+  }
+
+  if (['invalid', 'wrong-target', 'volatile', 'weak'].includes(status)) {
+    return { key: status, label: qualityBadgeLabel(status, locator.matchCount), stars: 1, color: '#ef4444' };
+  }
+
+  const baseScore = Number.isFinite(locator.baseScore) ? locator.baseScore : Math.max(1, locator.score - 2);
+  if (baseScore >= 5) return { key: 'excellent', label: 'Excellent', stars: 5, color: '#22c55e' };
+  if (baseScore >= 4) return { key: 'good', label: 'Good', stars: 4, color: '#84cc16' };
+  if (baseScore >= 3) return { key: 'stable', label: 'Stable', stars: 3, color: '#facc15' };
+  return { key: 'acceptable', label: 'Stable', stars: 2, color: '#f97316' };
+}
+
+/** Describes the HTML attribute or DOM information used by a locator. */
+function getLocatorSourceLabel(locator) {
+  const directSources = {
+    testid: 'data-testid attribute',
+    testattr: 'data-test attribute',
+    qa: 'data-qa attribute',
+    cy: 'data-cy attribute',
+    id: 'id attribute',
+    aria: 'aria-label attribute',
+    name: 'name attribute',
+    placeholder: 'placeholder attribute',
+    linkedLabel: 'id attribute + linked label text',
+    title: 'title attribute',
+    href: 'href attribute',
+    role: 'role attribute',
+  };
+
+  if (directSources[locator.type]) return directSources[locator.type];
+
+  const label = String(locator.displayLabel || '').toLowerCase();
+  if (label.includes('ancestor id')) return 'ancestor id + visible text';
+  if (label.includes('ancestor data-')) return label.replace(' + text', ' attribute + visible text');
+  if (label.includes('ancestor aria-label')) return 'ancestor aria-label attribute + visible text';
+  if (label.includes('ancestor name')) return 'ancestor name attribute + visible text';
+  if (label.includes('ancestor class')) return 'ancestor class attribute + visible text';
+  if (label.includes('text xpath')) return 'visible text';
+  if (label.includes('option[value]')) return 'select id + option value attribute';
+  if (label.includes('[placeholder]')) return 'placeholder attribute';
+  if (label.includes('[aria-label]')) return 'aria-label attribute';
+  if (label.includes('[role]')) return 'role attribute';
+  if (label.includes('[type]')) return 'type attribute';
+  if (label.includes('parent > child')) return 'parent id + element tag';
+  if (label.includes('fallback')) return 'element tag';
+  return locator.type === 'xpath' ? 'visible text + ancestor context' : 'semantic CSS attributes';
+}
 /** Maps a status key to a display label string. */
 function qualityBadgeLabel(status, count) {
   switch (status) {
-    case 'verified':    return 'Verified Unique (1)';
+    case 'verified':     return 'Excellent';
     case 'wrong-target': return 'Wrong Element';
-    case 'unverified':  return '� Unverified';
-    case 'test-ready':  return '⚡ Test-Ready';
-    case 'excellent':   return '★ Excellent';
-    case 'unique':      return '✓ Unique';
-    case 'good':        return '✓ Good';
-    case 'stable':      return '◎ Stable';
-    case 'acceptable':  return '· Acceptable';
-    case 'text-xpath':  return 'Text Match';
-    case 'multiple':    return count != null ? `⚠ Multiple (${count})` : '⚠ Multiple';
-    case 'weak':        return '⚠ Weak';
-    case 'volatile':    return '✗ Volatile';
-    case 'invalid':     return '✗ Invalid';
-    case 'checking':    return '⟳ Checking…';
-    default:            return '· Unknown';
+    case 'unverified':   return 'Unverified';
+    case 'test-ready':   return 'Excellent';
+    case 'excellent':    return 'Excellent';
+    case 'unique':       return 'Excellent';
+    case 'good':         return 'Good';
+    case 'stable':       return 'Stable';
+    case 'acceptable':   return 'Acceptable';
+    case 'text-xpath':   return 'Text Match';
+    case 'multiple':     return count != null ? `Multiple (${count})` : 'Multiple';
+    case 'weak':         return 'Weak';
+    case 'volatile':     return 'Volatile';
+    case 'invalid':      return 'Invalid';
+    case 'checking':     return 'Checking...';
+    default:             return 'Unknown';
   }
 }
 
@@ -884,13 +965,6 @@ function qualityBadgeLabel(status, count) {
 function renderStars(score) {
   const s = Math.max(0, Math.min(5, score));
   return '★'.repeat(s) + '☆'.repeat(5 - s);
-}
-function starsColor(score) {
-  if (score >= 5) return '#f26700';
-  if (score >= 4) return '#ff8a2a';
-  if (score >= 3) return '#f59e0b';
-  if (score >= 2) return '#fb923c';
-  return '#ef4444';
 }
 
 // ============================================================

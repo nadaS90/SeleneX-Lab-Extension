@@ -1,5 +1,5 @@
 /**
- * content.js - SeleneX Lab v1
+ * content.js - SeleneX Lab v2
  *
  * Injected into every page frame (all_frames: true).
  * Responsibilities:
